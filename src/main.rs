@@ -1,6 +1,6 @@
 // Uncomment this block to pass the first stage
 use anyhow::Result;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::net::TcpStream;
 
@@ -26,6 +26,15 @@ fn main() {
 }
 
 fn handle_connection(mut conn: TcpStream) -> Result<()> {
-    conn.write_all(b"+PONG\r\n")?;
+    let mut buf = [0; 1024];
+    loop {
+        let n = conn.read(&mut buf)?;
+
+        if n == 0 {
+            break;
+        }
+
+        conn.write_all(b"+PONG\r\n")?;
+    }
     Ok(())
 }
