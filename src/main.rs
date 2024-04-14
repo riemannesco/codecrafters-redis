@@ -13,7 +13,7 @@ enum Command {
 struct Request<'a> {
     request_type: RequestType,
     raw: &'a [u8],
-    data: String,
+    data: &'a [u8],
 }
 
 #[derive(PartialEq, Debug)]
@@ -30,55 +30,59 @@ enum RequestType {
     //Array,
     Unknown,
 }
+impl<'a> Request<'a> {
+    fn parse_command(command: &[u8]) -> Result<Request<'_>, Box<dyn std::error::Error>> {
+        let prefix = command.first();
+        let prefix = match prefix {
+            Some(p) => p,
+            None => return Err("empty request".into()),
+        };
 
-fn parse_command<'a>(command: &'a [u8]) -> Result<Request<'a>, Box<dyn std::error::Error>> {
-    let request_type = RequestType::build(command.first().unwrap());
-    if request_type.eq(&RequestType::Unknown) {
-        println!("unknown");
-        return Err("unknown request type".into());
+        let request_type = RequestType::build(prefix);
+        if request_type.eq(&RequestType::Unknown) {
+            return Err("unknown request type".into());
+        }
+
+        let args: Vec<&[u8]> = command
+            .split(|&c| c == b'\n')
+            .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+            .collect();
+
+        let request: Request = match request_type {
+            RequestType::SString => {
+                let data = args[0];
+                Request {
+                    request_type: RequestType::SString,
+                    raw: command,
+                    data,
+                }
+            }
+            //RequestType::Array => {}
+            RequestType::BString => {
+                let data = args[1];
+                Request {
+                    request_type: RequestType::BString,
+                    raw: command,
+                    data,
+                }
+            }
+            RequestType::Unknown => Request {
+                request_type: RequestType::Unknown,
+                raw: b"",
+                data: b"",
+            },
+        };
+        Ok(request)
     }
-    let args: Vec<&[u8]> = command
-        .split(|&c| c == b'\n')
-        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
-        .collect();
-    let request: Request = match request_type {
-        RequestType::SString => {
-            println!("request parsed");
-            let data = String::from_utf8(args[0].to_vec())?;
-            Request {
-                request_type: RequestType::SString,
-                raw: command,
-                data,
-            }
-        }
-        //RequestType::Array => {}
-        RequestType::BString => {
-            println!("requesssst parsed");
-            let size: u32 = String::from_utf8(args[0].to_vec())?.parse()?;
-            let data = String::from_utf8(args[1].to_vec())?;
-            Request {
-                request_type: RequestType::BString,
-                raw: command,
-                data,
-            }
-        }
-        RequestType::Unknown => Request {
-            request_type: RequestType::Unknown,
-            raw: b"",
-            data: "".into(),
-        },
-    };
-    println!("{:?}", request.data);
-    return Ok(request);
 }
 
 impl RequestType {
-    fn build(c: &u8) -> RequestType {
+    fn build(c: &u8) -> Self {
         match *c {
-            b'+' => RequestType::SString,
-            b'$' => RequestType::BString,
+            b'+' => Self::SString,
+            b'$' => Self::BString,
             //b'*' => RequestType::Array,
-            _ => RequestType::Unknown,
+            _ => Self::Unknown,
         }
     }
 }
@@ -95,7 +99,7 @@ fn main() {
                 });
             }
             Err(e) => {
-                println!("error: {}", e);
+                println!("error: {e}");
             }
         }
     }
@@ -110,8 +114,8 @@ fn handle_connection(mut conn: TcpStream) -> Result<(), Box<dyn std::error::Erro
             break;
         }
 
-        let request = parse_command(&mut buf[0..=n])?;
-        println!("request parsed");
+        let request = Request::parse_command(&buf[0..=n])?;
+        println!("{:?}", request);
         conn.write_all(b"+PONG\r\n")?;
     }
     Ok(())
